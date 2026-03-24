@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camino Flow Editor</title>
+    <style>
+        :root {
+            --bg-color: #f4f5f7;
+            --start-color: #2ecc71; 
+            --end-color: #e74c3c;   
+            --action-color: #3498db; 
+            --inter-color: #f1c40f;  
+            --border-radius: 8px;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0; padding: 0; background: var(--bg-color); color: #333;
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+        
+        /* Toolbar */
+        .toolbar {
+            background: #2c3e50; padding: 15px; color: white;
+            display: flex; gap: 10px; align-items: center; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            flex-wrap: wrap;
+        }
+        .toolbar h2 { margin: 0 15px 0 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+        .toolbar input[type="text"] { padding: 8px; border-radius: 4px; border: none; font-size: 14px; width: 130px; }
+        .toolbar button {
+            padding: 8px 12px; border: none; border-radius: 4px; background: #7f8c8d; color: white;
+            cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 13px;
+        }
+        .toolbar button:hover:not(:disabled) { background: #95a5a6; }
+        .toolbar button:disabled { background: #5a6c7d; cursor: not-allowed; opacity: 0.6; }
+        .toolbar .save-btn { background: #27ae60; }
+        .toolbar .save-btn:hover { background: #2ecc71; }
+        .toolbar .load-btn { background: #e67e22; }
+        .toolbar .add-btn { background: #34495e; border: 1px solid #7f8c8d; }
+        
+        .toolbar-group { display: flex; gap: 5px; margin-left: auto; border-left: 1px solid #555; padding-left: 10px;}
+        .toolbar .dir-btn { background: #e67e22; }
+        .icon-btn-tool { font-size: 16px !important; padding: 4px 12px !important; background: #34495e; }
+
+        /* Canvas Setup */
+        .canvas-container {
+            flex-grow: 1; overflow: auto; position: relative; background: #e9ecef;
+            background-image: linear-gradient(#d1d1d1 1px, transparent 1px), linear-gradient(#d1d1d1 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .workspace { 
+            position: relative; width: 5000px; height: 5000px; 
+            transform-origin: 0 0; transition: transform 0.1s ease-out;
+        }
+        svg.connections { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+        
+        /* Blocks */
+        .block-card {
+            background: white; border-radius: var(--border-radius);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15); position: absolute;
+            display: flex; flex-direction: column; z-index: 10;
+            width: auto; min-width: 180px; 
+        }
+        .block-header {
+            padding: 12px 15px; border-radius: var(--border-radius);
+            font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 15px;
+            cursor: grab; user-select: none; font-size: 14px;
+        }
+        .block-header:active { cursor: grabbing; }
+        
+        /* Custom Block Colors */
+        .START .block-header { background: var(--start-color); color: white; }
+        .END .block-header { background: var(--end-color); color: white; }
+        .ACTION .block-header { background: var(--action-color); color: white; }
+        .INTERSECTION .block-header { background: var(--inter-color); color: #333; }
+
+        /* Buttons on Block */
+        .btn-group { display: flex; gap: 5px; }
+        .icon-btn {
+            background: rgba(255,255,255,0.25); color: white; border: none; border-radius: 4px; width: 26px; height: 26px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: 0.2s;
+        }
+        .icon-btn:hover { background: rgba(255,255,255,0.5); }
+        .INTERSECTION .icon-btn { background: rgba(0,0,0,0.1); color: #333; }
+        .INTERSECTION .icon-btn:hover { background: rgba(0,0,0,0.3); }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+            z-index: 2000; backdrop-filter: blur(2px);
+        }
+        .modal-content {
+            background: white; border-radius: 8px; width: 450px; max-width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3); display: flex; flex-direction: column;
+            max-height: 85vh;
+        }
+        .modal-header {
+            padding: 15px 20px; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 16px;
+            display: flex; justify-content: space-between; align-items: center; background: #fafafa;
+            border-top-left-radius: 8px; border-top-right-radius: 8px;
+        }
+        .modal-close-btn {
+            background: none; border: none; font-size: 18px; cursor: pointer; color: #777;
+        }
+        .modal-close-btn:hover { color: #e74c3c; }
+        .modal-body {
+            padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px;
+        }
+
+        /* Form Elements inside Modal */
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 12px; font-weight: bold; color: #555; }
+        .form-group input[type="text"], .form-group select { 
+            padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%; box-sizing: border-box; 
+        }
+        .condition-list { border: 1px dashed #ccc; padding: 15px; border-radius: 4px; background: #fafafa; }
+        .condition-item { border-bottom: 1px solid #ddd; padding-bottom: 15px; margin-bottom: 15px; }
+        .condition-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .add-cond-btn { background: #8e44ad; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 10px; width: 100%; font-weight: bold;}
+        .remove-cond-btn { background: #e74c3c; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 8px; }
+        .id-badge { font-family: monospace; font-size: 11px; color: #777; word-break: break-all; background: #eee; padding: 5px; border-radius: 4px;}
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <h2>Camino flow editor</h2>
+    <input type="text" id="flowName" placeholder="Flow Name" value="myFirstFlow" onchange="updateFlowName(this.value)">
+    <button class="load-btn" onclick="document.getElementById('fileInput').click()">Load</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none" onchange="loadJSON(event)">
+    <button class="save-btn" onclick="saveJSON()">Save</button>
+    
+    <div style="width: 5px;"></div>
+    
+    <button class="add-btn" onclick="addBlock('START')">+ START</button>
+    <button class="add-btn" onclick="addBlock('ACTION')">+ ACTION</button>
+    <button class="add-btn" onclick="addBlock('INTERSECTION')">+ INTERSECTION</button>
+    <button class="add-btn" onclick="addBlock('END')">+ END</button>
+
+    <div class="toolbar-group">
+        <button id="undoBtn" class="icon-btn-tool" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
+        <button id="redoBtn" class="icon-btn-tool" onclick="redo()" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+        <div style="width: 5px; border-left: 1px solid #555; margin-left: 5px;"></div>
+        <button class="icon-btn-tool" onclick="changeZoom(-0.1)" title="Zoom Out">-</button>
+        <button class="icon-btn-tool" onclick="changeZoom(0.1)" title="Zoom In">+</button>
+        <button class="dir-btn" id="dirBtn" onclick="toggleFlowDirection()">Flow: Vertical</button>
+    </div>
+</div>
+
+<div class="canvas-container" id="canvasContainer">
+    <div class="workspace" id="workspace">
+        <svg class="connections" id="connectionsSvg">
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#555" />
+                </marker>
+            </defs>
+            <g id="pathsGroup"></g>
+        </svg>
+        <div id="blocksContainer"></div>
+    </div>
+</div>
+
+<div id="configModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span id="modalTitle">Configure Block</span>
+            <button class="modal-close-btn" onclick="closeModal()">✖</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            </div>
+    </div>
+</div>
+
+<script>
+    // --- State Management ---
+    let flowData = { name: "myFirstFlow", blocks: [] };
+    let draggedBlockId = null;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    let initialDragState = null; // Used to track state for undo/redo purely for dragging
+    
+    let flowDirection = 'vertical'; 
+    let currentZoom = 1.0;
+    let activeModalBlockId = null;
+
+    // --- History / Undo / Redo Engine ---
+    let undoStack = [];
+    let redoStack = [];
+
+    function saveState() {
+        undoStack.push(JSON.stringify(flowData));
+        redoStack = []; // Clear redo stack on new action
+        updateHistoryButtons();
+    }
+
+    function undo() {
+        if (undoStack.length === 0) return;
+        redoStack.push(JSON.stringify(flowData));
+        flowData = JSON.parse(undoStack.pop());
+        refreshAfterHistoryChange();
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        undoStack.push(JSON.stringify(flowData));
+        flowData = JSON.parse(redoStack.pop());
+        refreshAfterHistoryChange();
+    }
+
+    function refreshAfterHistoryChange() {
+        render();
+        // If the modal was open but the block was undone out of existence, close it
+        if (activeModalBlockId) {
+            if (flowData.blocks.find(b => b.id === activeModalBlockId)) {
+                renderModal(); 
+            } else {
+                closeModal();
+            }
+        }
+        updateHistoryButtons();
+    }
+
+    function updateHistoryButtons() {
+        document.getElementById('undoBtn').disabled = undoStack.length === 0;
+        document.getElementById('redoBtn').disabled = redoStack.length === 0;
+    }
+
+    // Keyboard Listeners for Undo/Redo
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'z' || e.key === 'Z') {
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    redo();
+                } else {
+                    e.preventDefault();
+                    undo();
+                }
+            } else if (e.key === 'y' || e.key === 'Y') {
+                e.preventDefault();
+                redo(); // Support for Ctrl+Y redo
+            }
+        }
+    });
+
+    // --- Helper Functions ---
+    function generateId() { return crypto.randomUUID().replace(/-/g, ''); }
+    function getBlockLabel(block) { return block.name ? `${block.name} (${block.type})` : `[${block.type}] ${block.id.substring(0,8)}...`; }
+    function getNextIdOptions(currentNextId) {
+        let options = `<option value="">-- Select Next Block --</option>`;
+        flowData.blocks.forEach(b => {
+            const selected = b.id === currentNextId ? 'selected' : '';
+            options += `<option value="${b.id}" ${selected}>${getBlockLabel(b)}</option>`;
+        });
+        return options;
+    }
+
+    // --- Top Level Controls ---
+    function changeZoom(delta) {
+        currentZoom = Math.max(0.3, Math.min(2.0, currentZoom + delta));
+        document.getElementById('workspace').style.transform = `scale(${currentZoom})`;
+    }
+
+    function toggleFlowDirection() {
+        flowDirection = flowDirection === 'vertical' ? 'horizontal' : 'vertical';
+        document.getElementById('dirBtn').innerText = `Flow: ${flowDirection.charAt(0).toUpperCase() + flowDirection.slice(1)}`;
+        drawArrows(); 
+    }
+
+    // --- Core Operations ---
+    function updateFlowName(val) { 
+        if(flowData.name !== val) {
+            saveState();
+            flowData.name = val; 
+        }
+    }
+
+    function addBlock(type) {
+        saveState();
+        const container = document.getElementById('canvasContainer');
+        const xPos = (container.scrollLeft + 150) / currentZoom; 
+        const yPos = (container.scrollTop + 50 + (flowData.blocks.length * 50)) / currentZoom;
+
+        const newBlock = { id: generateId(), type: type, x: xPos, y: yPos };
+        
+        if (type === 'START' || type === 'ACTION') newBlock.nextId = "";
+        if (type === 'ACTION') { newBlock.name = `action_${flowData.blocks.length}`; newBlock.action = "handlerName"; }
+        if (type === 'INTERSECTION') { newBlock.name = `intersection_${flowData.blocks.length}`; newBlock.conditions = []; }
+
+        flowData.blocks.push(newBlock);
+        render();
+    }
+
+    function deleteBlock(id) { 
+        saveState();
+        flowData.blocks = flowData.blocks.filter(b => b.id !== id); 
+        render(); 
+    }
+    
+    function updateBlock(id, field, value) {
+        const block = flowData.blocks.find(b => b.id === id);
+        if (block && block[field] !== value) {
+            saveState();
+            block[field] = value;
+            if (field === 'name') render(); 
+            if (field === 'nextId') drawArrows(); 
+        }
+    }
+
+    // --- Modal Configuration Logic ---
+    function openModal(id) {
+        activeModalBlockId = id;
+        renderModal();
+        document.getElementById('configModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('configModal').style.display = 'none';
+        activeModalBlockId = null;
+    }
+
+    function renderModal() {
+        if (!activeModalBlockId) return;
+        const block = flowData.blocks.find(b => b.id === activeModalBlockId);
+        if (!block) { closeModal(); return; }
+
+        document.getElementById('modalTitle').innerText = `Configure ${block.type}`;
+        const modalBody = document.getElementById('modalBody');
+        
+        let bodyHTML = `<div class="id-badge">ID: ${block.id}</div>`;
+
+        if (block.type === 'ACTION' || block.type === 'INTERSECTION') {
+            bodyHTML += `<div class="form-group"><label>Name</label><input type="text" value="${block.name || ''}" onchange="updateBlock('${block.id}', 'name', this.value)"></div>`;
+        }
+        if (block.type === 'ACTION') {
+            bodyHTML += `<div class="form-group"><label>Action (Handler)</label><input type="text" value="${block.action || ''}" onchange="updateBlock('${block.id}', 'action', this.value)"></div>`;
+        }
+        if (block.type === 'START' || block.type === 'ACTION') {
+            bodyHTML += `<div class="form-group"><label>Next Block</label><select onchange="updateBlock('${block.id}', 'nextId', this.value)">${getNextIdOptions(block.nextId)}</select></div>`;
+        }
+
+        if (block.type === 'INTERSECTION') {
+            let conditionsHTML = `<div class="condition-list"><label style="font-size:14px;font-weight:bold;color:#333;display:block;margin-bottom:10px;">Routing Conditions</label>`;
+            block.conditions.forEach((cond, idx) => {
+                const isDefault = cond.defaultCondition === true;
+                conditionsHTML += `
+                    <div class="condition-item">
+                        <div class="form-group"><label>Condition Name</label><input type="text" value="${cond.name || ''}" onchange="updateCondition('${block.id}', ${idx}, 'name', this.value)"></div>
+                        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 8px;">
+                            <input type="radio" name="default_${block.id}" ${isDefault ? 'checked' : ''} onchange="setConditionAsDefault('${block.id}', ${idx})"><label style="margin:0;cursor:pointer;">Set as Default Path</label>
+                        </div>
+                        ${!isDefault ? `<div class="form-group" style="margin-top:8px;"><label>MVEL Expression</label><input type="text" value="${cond.expression || ''}" onchange="updateCondition('${block.id}', ${idx}, 'expression', this.value)" placeholder="e.g. amount > 100"></div>` : ''}
+                        <div class="form-group" style="margin-top:8px;"><label>Target Block</label><select onchange="updateCondition('${block.id}', ${idx}, 'nextId', this.value)">${getNextIdOptions(cond.nextId)}</select></div>
+                        <button class="remove-cond-btn" onclick="deleteCondition('${block.id}', ${idx})">Remove Condition</button>
+                    </div>
+                `;
+            });
+            conditionsHTML += `<button class="add-cond-btn" onclick="addCondition('${block.id}')">+ Add New Condition</button></div>`;
+            bodyHTML += conditionsHTML;
+        }
+
+        modalBody.innerHTML = bodyHTML;
+    }
+
+    // --- Intersection Logic ---
+    function addCondition(blockId) {
+        saveState();
+        flowData.blocks.find(b => b.id === blockId).conditions.push({ name: "new_cond", expression: "", nextId: "" });
+        renderModal(); drawArrows();
+    }
+    function updateCondition(blockId, condIndex, field, value) {
+        const cond = flowData.blocks.find(b => b.id === blockId).conditions[condIndex];
+        if (cond[field] !== value) {
+            saveState();
+            cond[field] = value;
+            if(field === 'nextId' || field === 'name') drawArrows();
+        }
+    }
+    function setConditionAsDefault(blockId, condIndex) {
+        saveState();
+        const block = flowData.blocks.find(b => b.id === blockId);
+        block.conditions.forEach((c, idx) => {
+            if (idx === condIndex) { c.defaultCondition = true; delete c.expression; } 
+            else { delete c.defaultCondition; if (!c.expression) c.expression = "condition == true"; }
+        });
+        renderModal();
+    }
+    function deleteCondition(blockId, condIndex) {
+        saveState();
+        flowData.blocks.find(b => b.id === blockId).conditions.splice(condIndex, 1);
+        renderModal(); drawArrows();
+    }
+
+    // --- Drag and Drop Logic ---
+    function startDrag(e, id) {
+        if (e.target.tagName === 'BUTTON') return;
+        
+        initialDragState = JSON.stringify(flowData); // Remember where it was before drag
+        draggedBlockId = id;
+        
+        const card = document.getElementById(`card-${id}`);
+        const rect = card.getBoundingClientRect();
+        
+        dragOffsetX = (e.clientX - rect.left) / currentZoom;
+        dragOffsetY = (e.clientY - rect.top) / currentZoom;
+        
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', stopDrag);
+    }
+    
+    function onDrag(e) {
+        if (!draggedBlockId) return;
+        const block = flowData.blocks.find(b => b.id === draggedBlockId);
+        const workspaceRect = document.getElementById('workspace').getBoundingClientRect();
+        
+        block.x = Math.max(0, (e.clientX - workspaceRect.left) / currentZoom - dragOffsetX);
+        block.y = Math.max(0, (e.clientY - workspaceRect.top) / currentZoom - dragOffsetY);
+        
+        const card = document.getElementById(`card-${draggedBlockId}`);
+        card.style.left = `${block.x}px`;
+        card.style.top = `${block.y}px`;
+        drawArrows(); 
+    }
+    
+    function stopDrag() {
+        if (draggedBlockId) {
+            // Only push to history stack if the position actually changed
+            const finalDragState = JSON.stringify(flowData);
+            if (initialDragState && initialDragState !== finalDragState) {
+                undoStack.push(initialDragState);
+                redoStack = [];
+                updateHistoryButtons();
+            }
+        }
+        
+        draggedBlockId = null;
+        initialDragState = null;
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('mouseup', stopDrag);
+    }
+
+    // --- Dynamic Arrow Routing Logic ---
+    function drawArrows() {
+        const pathsGroup = document.getElementById('pathsGroup');
+        pathsGroup.innerHTML = ''; 
+
+        flowData.blocks.forEach(block => {
+            if (block.type === 'START' || block.type === 'ACTION') {
+                if (block.nextId) drawOrthogonalArrow(block.id, block.nextId);
+            } else if (block.type === 'INTERSECTION') {
+                block.conditions.forEach(cond => {
+                    if (cond.nextId) drawOrthogonalArrow(block.id, cond.nextId, cond.name);
+                });
+            }
+        });
+    }
+
+    function generateRoundedPath(points, radius) {
+        if (points.length < 2) return '';
+        let d = `M ${points[0].x} ${points[0].y}`;
+        
+        for (let i = 1; i < points.length - 1; i++) {
+            const prev = points[i - 1], curr = points[i], next = points[i + 1];
+            const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+            const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
+            const r = Math.min(radius, distPrev / 2, distNext / 2);
+
+            const dir1X = curr.x === prev.x ? 0 : Math.sign(curr.x - prev.x);
+            const dir1Y = curr.y === prev.y ? 0 : Math.sign(curr.y - prev.y);
+            const dir2X = next.x === curr.x ? 0 : Math.sign(next.x - curr.x);
+            const dir2Y = next.y === curr.y ? 0 : Math.sign(next.y - curr.y);
+
+            d += ` L ${curr.x - dir1X * r} ${curr.y - dir1Y * r} Q ${curr.x} ${curr.y} ${curr.x + dir2X * r} ${curr.y + dir2Y * r}`;
+        }
+        d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+        return d;
+    }
+
+    function drawOrthogonalArrow(sourceId, targetId, labelText = "") {
+        const sourceCard = document.getElementById(`card-${sourceId}`);
+        const targetCard = document.getElementById(`card-${targetId}`);
+        if (!sourceCard || !targetCard) return;
+
+        let points = [];
+        let textX, textY;
+
+        if (flowDirection === 'vertical') {
+            const sX = parseInt(sourceCard.style.left) + (sourceCard.offsetWidth / 2);
+            const sY = parseInt(sourceCard.style.top) + sourceCard.offsetHeight;
+            const tX = parseInt(targetCard.style.left) + (targetCard.offsetWidth / 2);
+            const tY = parseInt(targetCard.style.top);
+
+            if (tY > sY + 30) {
+                const midY = sY + (tY - sY) / 2;
+                points = [ {x: sX, y: sY}, {x: sX, y: midY}, {x: tX, y: midY}, {x: tX, y: tY} ];
+                textX = sX + (tX - sX) / 2; textY = midY - 8;
+            } else {
+                const midX = (sX > tX) ? Math.max(sX, tX) + 120 : Math.min(sX, tX) - 120;
+                points = [ {x: sX, y: sY}, {x: sX, y: sY + 25}, {x: midX, y: sY + 25}, {x: midX, y: tY - 25}, {x: tX, y: tY - 25}, {x: tX, y: tY} ];
+                textX = midX; textY = (sY + tY) / 2;
+            }
+        } else {
+            const sX = parseInt(sourceCard.style.left) + sourceCard.offsetWidth;
+            const sY = parseInt(sourceCard.style.top) + (sourceCard.offsetHeight / 2);
+            const tX = parseInt(targetCard.style.left);
+            const tY = parseInt(targetCard.style.top) + (targetCard.offsetHeight / 2);
+
+            if (tX > sX + 30) {
+                const midX = sX + (tX - sX) / 2;
+                points = [ {x: sX, y: sY}, {x: midX, y: sY}, {x: midX, y: tY}, {x: tX, y: tY} ];
+                textX = midX; textY = sY + (tY - sY) / 2 - 8;
+            } else {
+                const midY = (sY > tY) ? Math.max(sY, tY) + 60 : Math.min(sY, tY) - 60;
+                points = [ {x: sX, y: sY}, {x: sX + 25, y: sY}, {x: sX + 25, y: midY}, {x: tX - 25, y: midY}, {x: tX - 25, y: tY}, {x: tX, y: tY} ];
+                textX = (sX + tX) / 2; textY = midY - 8;
+            }
+        }
+
+        const pathStr = generateRoundedPath(points, 15);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathStr);
+        path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#555');
+        path.setAttribute('stroke-width', '2.5'); path.setAttribute('marker-end', 'url(#arrowhead)');
+        pathsGroup.appendChild(path);
+
+        if (labelText) {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', textX - 30); rect.setAttribute('y', textY - 10);
+            rect.setAttribute('width', '60'); rect.setAttribute('height', '20');
+            rect.setAttribute('fill', 'white'); rect.setAttribute('rx', '4'); rect.setAttribute('stroke', '#ccc');
+            pathsGroup.appendChild(rect);
+
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', textX); text.setAttribute('y', textY + 4);
+            text.setAttribute('fill', '#d35400'); text.setAttribute('font-size', '11px');
+            text.setAttribute('font-weight', 'bold'); text.setAttribute('text-anchor', 'middle');
+            text.textContent = labelText;
+            pathsGroup.appendChild(text);
+        }
+    }
+
+    // --- Rendering Logic ---
+    function render() {
+        document.getElementById('flowName').value = flowData.name;
+        const container = document.getElementById('blocksContainer');
+        container.innerHTML = '';
+
+        flowData.blocks.forEach(block => {
+            if (block.x === undefined) block.x = 50;
+            if (block.y === undefined) block.y = 50;
+
+            const card = document.createElement('div');
+            card.className = `block-card ${block.type}`;
+            card.id = `card-${block.id}`;
+            card.style.left = `${block.x}px`;
+            card.style.top = `${block.y}px`;
+
+            const headerText = block.name ? `${block.name} (${block.type})` : block.type;
+
+            card.innerHTML = `
+                <div class="block-header" onmousedown="startDrag(event, '${block.id}')" ondblclick="openModal('${block.id}')">
+                    <span>${headerText}</span>
+                    <div class="btn-group">
+                        <button class="icon-btn" onclick="openModal('${block.id}')" title="Configure Block">⚙️</button>
+                        <button class="icon-btn" onclick="deleteBlock('${block.id}')" title="Delete Block">✖</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+        setTimeout(drawArrows, 50);
+    }
+
+    // --- File I/O ---
+    function saveJSON() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(flowData, null, 4));
+        const a = document.createElement('a');
+        a.href = dataStr; a.download = flowData.name + ".json";
+        document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    function loadJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const parsed = JSON.parse(e.target.result);
+                if (parsed.name && Array.isArray(parsed.blocks)) {
+                    flowData = parsed;
+                    undoStack = [];
+                    redoStack = [];
+                    updateHistoryButtons();
+                    render();
+                } else alert("Invalid file format.");
+            } catch (err) { alert("Error parsing JSON file!"); }
+            event.target.value = '';
+        };
+        reader.readAsText(file);
+    }
+
+    render();
+    updateHistoryButtons();
+</script>
+
+</body>
+</html>
